@@ -1,0 +1,1394 @@
+<!--
+/**************************************************************************************
+ * Create by:   Deloitte Consulting LLP.
+ * CreateDate:  05/17/2016
+ * Description: Enrollment Portal page.
+ *
+ *  Modification Log:
+ *  ------------------------------------------------------------------------------
+ *  * Version       Date            Author                  Description
+ *  * ----------------------------------------------------------------------------
+ *  * 1.1           05/17/2016      Alejandro Cajica        Original Version.
+ **************************************************************************************/
+-->
+<apex:page id="EnrollmentAgentPortalAppFlow_HF" controller="EnrollmentPortal_Controller_HF" sidebar="false" showHeader="false" standardStylesheets="false" showChat="false" docType="html-5.0"
+        action="{!onPageLoadAction}">
+    <!-- Header -->
+    <c:CustomFramework_HF boolCFValidations="true" boolCFCalendars="true" boolCFDataTables="true" boolCFCharts="false" boolCFInputFiles="true" boolCFMultiSelects="true"
+            boolCFStyle="false" boolCFWizards="false" boolCFSlideshows="true" />
+            
+    <!-- Starts: Workaround provided by SFDC for AJAX Toolkit - Case 14357860 -->
+    <script type="text/javascript"> 
+        var __sfdcSessionId = '{!GETSESSIONID()}'; 
+        var __sfdcSiteUrlPrefix = '{!$Site.Prefix}'; 
+    </script> 
+    <script src="../../soap/ajax/35.0/connection.js" type="text/javascript"></script>
+    <!-- Ends: Workaround provided by SFDC for AJAX Toolkit - Case 14357860 -->
+    
+    <apex:actionRegion rendered="{!NOT(AND(boolIsLoggedIn, boolIsInConfirmationPage))}">
+        <script>
+            var mapAttIdToType = {};
+            var mapAttTypeToRetryCount = {};
+            var strReuploadDocId = "";
+            var strRadioYes = "yes";
+            var strRadioNo = "no";
+            var strEnableField = "ENABLE";
+            var strDisableField = "DISABLE";
+            var strMinimumRiderAge = 27;
+            var strMaximumRiderAge = 29;
+            var strSelectedFunctionality;
+            var arrZipCodes = new Array();
+            var intNumberOfDocumentsRequired = 2;
+            var strPCPDivId;
+            var boolUploadSuccess = false;
+            
+            //Document ready.
+            $(document).ready(function() {
+                changeDefaultListValue();
+                
+                //Adding available zip codes.
+                <apex:repeat value="{!lstAvailableZipCodes}" var="zipcode">
+                    arrZipCodes['{!zipcode}'] = 'valid';
+                </apex:repeat>
+                $('.zipCodeField').change(function() {
+                    var strValue = $(this).val();
+                    if(arrZipCodes[strValue] != 'valid') {
+                        $(this).val('');
+                        addFieldErrorStyle($(this), 'Invalid Zip Code.', 'Invalid Zip Code.', '', intAlertTypeDanger);
+                    } else {
+                        removeFieldErrorStyle($(this));
+                    }
+                });
+            });
+    
+            /* Method name: changeDefaultListValue
+             * Description: Changes default list value
+             * Return Type: -
+             * Parameter:   -
+             */     
+            function changeDefaultListValue() {
+                $('option:contains("{!$Label.Enrollment_Portal_None_HF}")').text('{!$Label.Enrollment_Portal_Select_HF}')
+            }
+            
+            /* Method name: showHideSection
+             * Description: Handles the display of the form section depending on the selected radio button(yes/no).
+             * Return Type: -
+             * Parameter:   jQuery object / Selector.
+             */
+            function showHideSection(objComponent, targetContainer){
+                var strRadioValue = $(objComponent).val();
+                switch(strRadioValue.toUpperCase()) {
+                    case strRadioYes.toUpperCase():
+                        $(targetContainer).show();
+                    break;
+                    case strRadioNo.toUpperCase():
+                         clearAllFields(targetContainer);
+                        $(targetContainer).hide();
+                    break;
+                    default:
+                        $(targetContainer).hide();
+                    break;
+                }
+            };
+            
+            /* Method name: showHideCheckboxSection
+             * Description: Handles the display of form section, based on the checkbox selection.
+             * Return Type: -
+             * Parameter:   -
+             */
+            function showHideCheckboxSection() {
+                $('input[type="checkbox"]').click(function() {
+                    var checkedStatus = $(this).is(':checked');
+                    var objAssociatedSection =  $(this).closest(".form-check-section").next()
+                    if(checkedStatus) {
+                        objAssociatedSection.show();
+                    } else {
+                        clearAllFields(objAssociatedSection);
+                        objAssociatedSection.hide();
+                    }
+                });
+            }
+                    
+             /*
+             * Method name: updateReadOnlyFields
+             * Description: Update ReadOnly/disabled attribute to fields according to the parameters specified.
+             * Return Type: -
+             * Parameter:   jQuery object/Selector of the container.
+             */
+            function updateReadOnlyFields(objContainerSelector) {
+                try {
+                    var objComponent = getJQueryObject(objContainerSelector);
+                    var strRadioNames = [];
+                    var intCount = 0;
+                    if(objComponent.length == 0) {
+                        objComponent = null;
+                    }
+                    $('input[type=radio]', objComponent).each(function() {
+                        var currentObject = $(this);
+                        strRadioNames[intCount] = currentObject.attr('name');
+                        intCount++;
+                    });
+                    strRadioNames = jQuery.unique( strRadioNames );
+                    for(radioCount=0; radioCount < strRadioNames.length; radioCount++) {
+                        var boolChecked = false;
+                        $("input[name=" + strRadioNames[radioCount] + "]", objComponent).each(function() {
+                            var currentRadio = $(this);
+                            var strDisabledStatus = currentRadio.attr('backend-disabled');
+                            var strBackendCheck = currentRadio.attr('backend-check');
+                            if(strBackendCheck  == "checked") {
+                                currentRadio.click();
+                                boolChecked = true;
+                            }
+                            if(strDisabledStatus == "true") {
+                                currentRadio.prop('disabled','true');
+                            }
+                        });
+                        if(!boolChecked) {
+                             $("input[name=" + strRadioNames[radioCount] + "]", objComponent).each(function() {
+                                var strDefault = $(this).attr('default-check');
+                                if(strDefault  == "true") {
+                                    $(this).click();
+                                }
+                            });
+                        }
+                    }
+                    $('input[type=checkbox][backend-check]', objComponent).each(function() {
+                        var currentObject = $(this);
+                        var strBackendCheck = currentObject.attr('backend-check');
+                        if(strBackendCheck  == "checked") {
+                            currentObject.click();
+                        }
+                    });
+                    $('input[type="text"]', objComponent).each(function() {
+                        var currentObject = $(this);
+                        var strDisabledStatus = currentObject.attr('backend-disabled');
+                        if(stringIsBlank(strDisabledStatus) || strDisabledStatus == "false") {
+                            currentObject.prop('disabled');
+                        }
+                    });
+                } catch(objError) {
+                    console.log(objError);
+                }
+            }
+            
+            /*
+             * Method name: updateRadioCheckboxStyleWhenError
+             * Description: Update associated radio/checkbox elements to an input hidden.
+             * Return Type: -
+             * Parameter:   jQuery object/Selector of the container.
+             */        
+            function updateRadioCheckboxStyleWhenError(objContainerSelector) {
+                var objComponent = getJQueryObject(objContainerSelector);
+                if(objComponent.length == 0) {
+                    objComponent = null;
+                }
+                if(objComponent != null) {
+                    $('input[type="hidden"]', objComponent).each(function() {
+                        var currentObject = $(this);
+                        var currentRadioObject;
+                        var currentCheckboxObject;
+                        var boolInputHiddenHasError = false;
+                        var strInputHiddenHasError = currentObject.attr('validation-has-error');
+                        if(strInputHiddenHasError == "true") {
+                            boolInputHiddenHasError = true;
+                        }
+                        if(boolInputHiddenHasError) {
+                            currentRadioObject = $(this).closest(".radio-success");
+                            currentCheckboxObject = $(this).closest(".checkbox-success");
+                        } else {
+                            currentRadioObject = $(this).closest(".radio-danger");
+                            currentCheckboxObject = $(this).closest(".checkbox-danger")
+                        }
+                        if(currentRadioObject.is('div')) {
+                            currentRadioObject.toggleClass('radio-success radio-danger');
+                        }
+                        if(currentCheckboxObject.is('div')) {
+                            currentCheckboxObject.toggleClass('checkbox-success checkbox-danger');
+                        }
+                    });
+                }
+            }
+    
+            /*
+            * Method name: countFilledFields
+            * Description: Verify all the fields values under an specific jQuery selector.
+            * Return Type: boolean true if at leat one field has a value;
+            * Parameter:   jQuery selector/jQuery object of the container, alert jQuery selector, alert type, message to display.
+            */
+            function isSelectorEmpty(objContainerSelector, strAlertSelector, strAlertType, strAlertMessage) {
+                var boolResult = true;
+                hideAlert(strAlertSelector);
+                var objComponent = getJQueryObject(objContainerSelector);
+                var intCountFilled = 0;
+                if(objComponent != null) {
+                    $('input[type="text"], input[type="password"], textarea', objComponent).each(function(){
+                        if(stringIsNotBlank($(this).val() ) ) {
+                            intCountFilled++;
+                        }
+                    });
+                    $('select :nth-child(0)', objComponent).each(function() {
+                        if($(this).prop('selected') != null && $(this).prop('selected') != "true") {
+                            intCountFilled++;
+                        }
+                    });
+                    $('input[type="radio"], input[type="checkbox"]', objComponent).each(function() {
+                        if($(this).prop('checked') != null && $(this).prop('checked') != false ) {
+                            intCountFilled++;
+                        }
+                    });
+                    if(intCountFilled > 0) {
+                        boolResult = false;
+                    } else {
+                        if( stringIsNotBlank(strAlertSelector)) {
+                            if(stringIsBlank(strAlertType)) {
+                                strAlertType = intAlertTypeDanger;
+                            }
+                            if(stringIsBlank(strAlertMessage)) {
+                                strAlertMessage = "{!$Label.Enrollment_Portal_Alert_HF}";
+                            }
+                            showAlert(strAlertSelector, strAlertType, strAlertMessage );
+                        }
+                    }
+                }
+                return boolResult;
+            }
+            
+            /*
+             * Method name: setHiddenInput
+             * Description: Set value from radio/checkbox to hidden fields.
+             * Return Type: -
+             * Parameter:   current element
+             */     
+            function setHiddenInput(currentObject) {
+                try {
+                    if(currentObject != null) {
+                        var strName = currentObject.attr('name');
+                        if(stringIsNotBlank(strName)) {
+                            var objInputHidden = $('[associated-hidden-name = "' + strName + '"]');
+                            if(currentObject.is('input[type="checkbox"]')) {
+                                objInputHidden.val(currentObject.prop("checked"));
+                            } else {
+                                objInputHidden.val(currentObject.val());
+                            }
+                        }
+                    }
+                } catch(objError) {
+                    console.log(objError);
+                }
+            }
+            
+            /*
+             * Method name: disableRadioBlock
+             * Description: Disable associated block of radios.
+             * Return Type: -
+             * Parameter:   jQuery object/Selector of the container.
+             */
+            function disableRadioBlock(strNameEnable, strNameDisable) {
+                try {
+                    var strEnable = strNameEnable;
+                    var strDisable = strNameDisable;
+                    $("input[name=" + strNameEnable + "]").each(function() {
+                        var currentRadio = $(this);
+                        currentRadio.removeProp('disabled');
+                    });
+                    $("input[name=" + strNameDisable + "]").each(function() {
+                        var currentRadio = $(this);
+                        currentRadio.prop('disabled','true');
+                        currentRadio.removeAttr('checked','');
+                    });
+                    $("[associated-hidden-name='" + strNameDisable + "']").each(function() {
+                        var currentRadio = $(this);
+                        var objInputHidden = currentRadio.closest('input[type="hidden"]');
+                        objInputHidden.val('');
+                        objInputHidden.attr('validate-required', false);
+                    });
+                } catch(objError) {
+                    console.log(objError);
+                }
+            }
+            
+            /*
+             * Method name: activateSpecificValidation()
+             * Description: Activate specific custom attributes for validation rules.
+             * Return Type: -
+             * Parameter:   -
+             */         
+            function activateSpecificValidation(objContainerSelector, strValidationAttribute, boolActivate) {
+                var objComponent = getJQueryObject(objContainerSelector);
+                if(objComponent != null && stringIsNotBlank(strValidationAttribute) && boolActivate != null) {
+                    $('[' + strValidationAttribute + ']', objComponent).each(function() {
+                        $(this).attr(strValidationAttribute, boolActivate);
+                    });
+                }
+            }
+    
+            /*
+             * Method name: activateSpecificValidationCheckboxSection()
+             * Description: Activate specific custom attributes for validation rules associated to a section opened using a checkbox.
+             * Return Type: -
+             * Parameter:   -
+             */         
+            function activateSpecificValidationCheckboxSection(objContainerSelector, strSelector ) {
+                var objComponent = getJQueryObject(objContainerSelector);
+                if(objComponent != null) {
+                    if(objComponent.is('input[type=checkbox]')) {
+                        var boolCheckedStatus = objComponent.prop('checked');
+                        var objAssociatedSection =  objComponent.closest(".form-check-section").next()
+                        if(boolCheckedStatus) {
+                            activateSpecificValidation(objAssociatedSection, 'validate-required', true);
+                        } else {
+                            activateSpecificValidation(objAssociatedSection, 'validate-required', false);
+                        }
+                    }
+                    if(objComponent.is('input[type=radio]') && stringIsNotBlank(strSelector)) {
+                        var strCheckedStatus = objComponent.prop('checked');
+                        if(strCheckedStatus != null) {
+                            activateSpecificValidation(strSelector, 'validate-required', true);
+                        } else {
+                            activateSpecificValidation(strSelector, 'validate-required', false);
+                        }
+                    }
+                }
+            }
+            
+            /*
+             * Method name: closeSectionOpenSection()
+             * Description: Closes and open a section accordin to parameters.
+             * Return Type: -
+             * Parameter:   Selector of the container to close, Selector of the container to open.
+             */
+            function closeSectionOpenSection(strCloseComponentSelectors, strOpenComponentSelectors) {
+                var arrSelectorsToClose;
+                var arrSelectorsToOpen;
+                var intCloseIndex = 0;
+                var intOpenIndex = 0;
+                if(stringIsNotBlank(strCloseComponentSelectors)) {
+                    arrSelectorsToClose = strCloseComponentSelectors.split('&&&');
+                }
+                if(stringIsNotBlank(strOpenComponentSelectors)) {
+                    arrSelectorsToOpen = strOpenComponentSelectors.split('&&&');
+                }
+                for(intCloseIndex in arrSelectorsToClose) {
+                    if(!isNaN(intCloseIndex)) {
+                        var objCloseComponent = getJQueryObject(arrSelectorsToClose[intCloseIndex]);
+                        if(objCloseComponent != null) {
+                            objCloseComponent.hide();
+                        }
+                    }
+                }
+                for(intOpenIndex in arrSelectorsToOpen) {
+                    if(!isNaN(intOpenIndex)) {
+                        var objOpenComponent  = getJQueryObject(arrSelectorsToOpen[intOpenIndex]);
+                        if(objOpenComponent != null) {
+                            objOpenComponent.show();
+                        }
+                    }
+                }           
+            }
+            
+            /*
+             * Method name: multipleToogleButtons()
+             * Description: .
+             * Return Type: -
+             * Parameter:   Selector of the container.
+             */
+            function multipleToogleButtons(objComponentSelector) {
+                var objComponent = getJQueryObject(objComponentSelector);
+                objComponent.each(function() {
+                    var objToggleButtonStart = $(this);
+                    var objButtonChildrenOn = objToggleButtonStart.children('.toggleGroupLabelOn');
+                    var objButtonChildrenOff = objToggleButtonStart.children('.toggleGroupLabelOff');
+                    objToggleButtonStart.attr("toggle-order-position","0");
+                    objButtonChildrenOn.hide();
+                    objButtonChildrenOff.show();
+                });
+                
+                objComponent.click(function() {
+                    var objCurrentButton = $(this);
+                    var strAssociatedButtons = objCurrentButton.attr('toggle-group-name');
+                    var intCurrentPosition = parseInt(objCurrentButton.attr('toggle-order-position'));
+                    var intSelect = 1;
+                    var intEmpty = 0;
+                    var intCount = 0;
+                    var intMaxSelectValues = objCurrentButton.attr('toggle-group-maximum-on');
+                    if(intMaxSelectValues == null || isNaN(intMaxSelectValues)) {
+                        intMaxSelectValues = intStart;
+                    }
+                    if(stringIsNotBlank(strAssociatedButtons)) {
+                        if(intCurrentPosition == 0) {
+                            $('[toggle-group-name = "' + strAssociatedButtons + '"]').each(function() {
+                                var strOrderPosition = $(this).attr('toggle-order-position');
+                                var intOrderPosition = parseInt(strOrderPosition);
+                                if(strOrderPosition == intSelect) {
+                                    intCount++;
+                                }
+                            });
+                            if(intCount < intMaxSelectValues) {
+                                objCurrentButton.attr('toggle-order-position', intSelect);
+                            }
+                        } else {
+                            objCurrentButton.attr('toggle-order-position', intEmpty);
+                        }
+                        $('[toggle-group-name = "' + strAssociatedButtons + '"]').each(function() {
+                            var objSiblingButton = $(this);
+                            var strOrderPosition = objSiblingButton.attr('toggle-order-position');
+                            var strButtonValueOn = objSiblingButton.attr("toggle-group-value-on");
+                            var strButtonValueOff = objSiblingButton.attr("toggle-group-value-off");
+                            var strButtonClassOn = objSiblingButton.attr("toggle-group-class-on");
+                            var strButtonClassOff = objSiblingButton.attr("toggle-group-class-off");
+                            var objButtonChildrenOn = objSiblingButton.children('.toggleGroupLabelOn');
+                            var objButtonChildrenOff = objSiblingButton.children('.toggleGroupLabelOff');
+                            if(parseInt(strOrderPosition) > 0) {
+                                objSiblingButton.addClass(strButtonClassOn);
+                                objButtonChildrenOn.show();
+                                objSiblingButton.removeClass(strButtonClassOff);
+                                objButtonChildrenOff.hide();
+                            } else {
+                                objSiblingButton.removeClass(strButtonClassOn);
+                                objButtonChildrenOn.hide();
+                                objSiblingButton.addClass(strButtonClassOff);
+                                objButtonChildrenOff.show();
+                            }
+                        });
+                    }
+                });             
+            }
+            
+            /*
+             * Method name: showModal()
+             * Description: Open and close model according to parameters
+             * Return Type: -
+             * Parameter:   Selector of the container to close, Show/Close boolean.
+             */
+            function showModal(objComponentSelector, boolShow) {
+                var objComponent = getJQueryObject(objComponentSelector);
+                if(boolShow != null && boolShow) {
+                    objComponent.modal('show');
+                } else {
+                    objComponent.modal('hide');
+                }
+            }
+            
+            /*
+             * Method name: waitUserInput
+             * Description: Waits for a user action to execute a method.
+             * Return Type: -
+             * Parameter:   Flag which allows to continue the execution, callback method.
+             */
+            function waitUserInput(boolFlag, objCallback) {
+                var objInterval = setInterval(function(){ 
+                    if(eval(boolFlag)) {
+                        eval(boolFlag + ' = false;');
+                        eval(objCallback);
+                        clearInterval(objInterval);
+                    }
+                }, 1);
+            }
+            
+            /*
+             * Method name: enableDisableField
+             * Description: 
+             * Return Type: -
+             * Parameter:   jQuery object / Selector.
+             */
+            function enableDisableField(objComponentSelector, strAction) {
+                var objComponent = getJQueryObject(objComponentSelector+":visible");
+                if(objComponent != null && stringIsNotBlank(strAction)) {
+                    switch(strAction.toUpperCase()) {
+                        case strEnableField:
+                            objComponent.removeProp("disabled");
+                            objComponent.attr("validate-required","true");
+                        break;
+                        case  strDisableField:
+                            objComponent.prop("disabled","true");
+                            objComponent.removeAttr("validate-required");
+                            objComponent.val("")
+                        break;
+                    }
+                }
+            }
+    
+            /*
+             * Method name: validateAge
+             * Description: Validate if selected date is elegible for rider.
+             * Return Type: -
+             * Parameter:   -
+             */             
+            function validateAge(objComponentSelector) {
+                var objDOBs = getJQueryObject(objComponentSelector);
+                $(objDOBs).each(function() {
+                    var objCurrentDOB = $(this);
+                    var strDate = objCurrentDOB.val();
+                    var strDateFormat = objCurrentDOB.attr(strDateTimeValidationCalendarFormatAttribute);
+                    var objDateOfBirth = moment(strDate, strDateFormat);
+                    if(objDateOfBirth != null) {
+                        var intAge = moment().diff(objDateOfBirth, 'years', true);
+                        if(!isNaN(intAge) && intAge >= strMinimumRiderAge &&  intAge <= strMaximumRiderAge) {
+                            objCurrentDOB.closest('.row').next().show();
+                        } else {
+                            objCurrentDOB.closest('.row').next().hide();
+                        }
+                    }
+                });
+            }
+            
+            /*
+             * Method name: createOtherInsuranceAutocomplete
+             * Description: Creates Other Insurance Name autocomplete fields.
+             * Return Type: -
+             * Parameter:   _
+             */     
+            function createOtherInsuranceAutocomplete() {
+                var arrOtherInsuranceNames = [<apex:repeat value="{!lstOtherInsuranceNames}" var="otherInsuranceName"> {
+                                        label: "{!otherInsuranceName.label}",
+                                        value: "{!otherInsuranceName.value}"
+                                        },
+                                    </apex:repeat>];
+                $('.otherInsuranceCompanyName').each(function() {
+                    var objOtherInsuranceNameLabel = $(this);
+                    var strCustomSelector = objOtherInsuranceNameLabel.attr('custom-selector');
+                    var objOtherInsuranceNameCode = $("[associated-custom-selector ='" + strCustomSelector + "']");
+                    if(objOtherInsuranceNameCode != null && stringIsNotBlank(objOtherInsuranceNameCode.val())) {
+                        for(var objIndex in arrOtherInsuranceNames) {
+                            var objItem = arrOtherInsuranceNames[objIndex];
+                            if(objItem.value == objOtherInsuranceNameCode.val()) {
+                                objOtherInsuranceNameLabel.val(objItem.label);
+                            }
+                        } 
+                    }
+                });
+                $(".otherInsuranceCompanyName" ).autocomplete({
+                    minLength: 1,
+                    autoFocus: true,
+                    highlightClass: 'ui-autocomplete-hightlight',
+                    source: arrOtherInsuranceNames,
+                    getValue: "label",
+                    select: function( event, ui ) {
+                        var strCustomSelector = $(this).attr('custom-selector');
+                        $("[custom-selector ='" + strCustomSelector + "']" ).val( ui.item.label );
+                        $("[associated-custom-selector ='" + strCustomSelector + "']").val( ui.item.value );
+                        return false;
+                        },
+                    change: function (event, ui) {
+                        var strCustomSelector = $(this).attr('custom-selector');
+                        if (!ui.item) {
+                            $(this).val('');
+                            $("[associated-custom-selector ='" + strCustomSelector + "']").val('');
+                        }
+                    }
+                }).data('ui-autocomplete')._renderItem = function( ul, item) {
+                    var re = new RegExp(this.term, "i") ;
+                    var t = item.label.replace(re,"<span style='font-weight: bold;'>" + "$&" + "</span>");
+                    return $( "<li></li>" )
+                        .data( "item.autocomplete", item )
+                        .append( "<a style='text-decoration: none;'>" + t + "</a>" )
+                        .appendTo( ul );
+                };
+            }    
+                                
+            /*START INPUT FILE - CUSTOM FUNCTIONS*/   
+            /*
+             * Method name  :   preloadDeletion
+             * Description  :   Deletes attachments previously loaded.
+             * Return Type  :   -
+             * Parameter    :   Functionality.
+             */         
+            function preloadDeletion(strFunctionality) {
+                spinner(true);
+                $('#removeButtonSection[functionality="' + strFunctionality + '"]').empty();
+                $('.file-input > .file-preview', $('inputfile[functionality="' + strFunctionality + '"]')).removeClass('hf-Background-LightGreen');
+                $('#rosterColumn[functionality="' + strFunctionality + '"]').removeClass('col-md-11');
+                $('#removeColumn[functionality="' + strFunctionality + '"]').removeClass('col-md-1');
+                $('#rosterColumn[functionality="' + strFunctionality + '"]').addClass('col-md-12');
+                $('#removeColumn[functionality="' + strFunctionality + '"]').addClass('col-md-0');
+                $('.file-drop-zone-title', $('div[functionality="' + strFunctionality + '"]')).show();
+                $('.file-drop-zone-title-preload', $('div[functionality="' + strFunctionality + '"]')).remove();
+                var strTemporalFunctionRemoval = $('input[functionality="' + strFunctionality + '"][type="file"]').attr('upload-base-64-function');
+                $('input[functionality="' + strFunctionality + '"][type="file"]').attr('upload-base-64-function', '');
+                $('input[functionality="' + strFunctionality + '"][type="file"]').fileinput('unlock');
+                $('input[functionality="' + strFunctionality + '"][type="file"]').attr('upload-base-64-function', strTemporalFunctionRemoval);
+            }
+            
+            /*
+             * Method name  :   validateDocumentUploadPageFields
+             * Description  :   Validates the fields on this page.
+             * Return Type  :   Boolean
+             * Parameter    :   Is Save and Quit.
+             */         
+            function validateDocumentUploadPageFields(boolIsSaveAndQuit) {
+                var boolResult = false;
+                var intNumberOfDocument = $('input[attachmentId][attachmentId!=""][type="file"][document-required="true"]').size();
+                if(validateFields('.policyAgreementRequired')) {
+                    if(intNumberOfDocument == intNumberOfDocumentsRequired) {
+                        spinner(true);
+                        if(boolIsSaveAndQuit) {
+                            saveAndQuitAction();
+                        } else {
+                            boolResult = true;
+                        }
+                    } else {
+                        showAlert('#errorMessages', intAlertTypeDanger, '{!$Label.Enrollment_Portal_Document_Required_HF}', 'Id', false);
+                    }
+                }
+                return boolResult;
+            }
+            
+            /*
+             * Method name  :   uploadFile
+             * Description  :   Uploads files.
+             * Return Type  :   -
+             * Parameter    :   List of files to be uploaded, Functionality, Input Field, Callback function.
+             */         
+            function uploadFile(lstFiles, strFunctionality, objInputField, strCallback) {
+                var strEnrollmentId = '{!objEnrollmentWrapper.objEnrollmentRecord.Id}';
+                var strSelectedDocumentSubtype = objInputField.attr('document-subtype');
+                if(stringIsBlank(strSelectedDocumentSubtype)) {
+                    strSelectedDocumentSubtype = '';
+                } else {
+                    strSelectedDocumentSubtype = '&&&' + strSelectedDocumentSubtype;
+                }
+                if(stringIsNotBlank(strEnrollmentId)) {
+                    var arrRules;
+                    var strFunctionalityLowerCase = strFunctionality.toLowerCase();
+                    lstOfFiles = {};
+                    showHideProgressBar(strFunctionalityLowerCase, true, 50);
+                    for(strIndex in lstFiles) {
+                        if(!isNaN(strIndex)) {
+                            var objReader = new FileReader();
+                            var objFile = lstFiles[strIndex];
+                            objReader.file = objFile;
+                            objReader.onload = function(event) {
+                                var objFileContent = String(event.target.result);
+                                var intIndex = objFileContent.indexOf('base64,');
+                                var attachBody = objFileContent.substring(intIndex + 7);
+                                var objAttachment = new sforce.SObject('Attachment');
+                                objAttachment.Name = objFile.name;
+                                objAttachment.ContentType = objFile.type;
+                                objAttachment.ParentId = strEnrollmentId;
+                                objAttachment.Body = attachBody;
+                                objAttachment.Description = strFunctionality + strSelectedDocumentSubtype;
+                                strSelectedDocumentSubtype = '';
+                                sforce.connection.create([objAttachment], {
+                                    onSuccess : function(result) {
+                                        showHideProgressBar(strFunctionalityLowerCase, true, 75);
+                                        strSelectedFunctionality = strFunctionalityLowerCase;
+                                        objInputField.attr('attachmentId', result[0].id);
+                                        mapAttIdToType[result[0].id] = strFunctionality;
+                                        mapAttTypeToRetryCount[mapAttIdToType[result[0].id]] = 0;
+                                        uploadToPega(result[0].id);
+                                        if(stringIsNotBlank(strCallback)) {
+                                            eval(strCallback + '("' + result[0].id + '");');
+                                        }
+                                    },
+                                    onFailure : function(result) {
+                                        showHideProgressBar(strFunctionalityLowerCase, false);
+                                        $('#attachmentResultMessage[functionality="' + strFunctionalityLowerCase + '"]').hide();
+                                        //alert('Upload Failed. Please try again.');
+                                        console.log(result);
+                                    }
+                                });
+                            };
+                            try {
+                                objReader.readAsDataURL(objFile);
+                            } catch(objError) {
+                                console.log(objError);
+                            }
+                        }
+                    }
+                    return true;
+                } else {
+                    showHideProgressBar(strFunctionalityLowerCase, false);
+                    $('#attachmentResultMessage[functionality="' + strFunctionalityLowerCase + '"]').hide();
+                    //alert('{!$Label.Enrollment_Portal_Upload_Failed_HF}');
+                    return false;
+                }
+            }
+            
+            /*
+             * Method name  :   onPegaUploadComplete
+             * Description  :   Finished the progress bar on Pega upload completion.
+             * Return Type  :   -
+             * Parameter    :   -
+             */
+            /*function onPegaUploadComplete() {
+                showHideProgressBar(strSelectedFunctionality, true, 100);
+                $('#attachmentResultMessage[functionality="' + strSelectedFunctionality + '"]').show();
+                $('#successMessageUpload[functionality="' + strSelectedFunctionality + '"]').text('{!$Label.Enrollment_Portal_Document_uploaded_successfully_HF}');
+                $('.kv-file-remove', $('#removeButtonSection[functionality="' + strSelectedFunctionality + '"]')).css('display', '');
+            }*/
+            
+            function onPegaUploadComplete(strAttachmentId, sfdcUploadSuccess) {
+                //alert('strAttachmentId-------->'+strAttachmentId);
+                //alert('sfdcUploadSuccess-------->'+sfdcUploadSuccess);
+                console.log(sfdcUploadSuccess);
+                strReuploadDocId = strAttachmentId;
+                var boolDoDeleteAttachment = false;
+                if(sfdcUploadSuccess != 'true') {
+                    console.log('Condition Not UIploaded');
+                    if(strAttachmentId in mapAttIdToType)
+                    {
+                        //alert('mapAttIdToType[strAttachmentId]---------->'+mapAttIdToType[strAttachmentId]);
+                        if(mapAttIdToType[strAttachmentId] in mapAttTypeToRetryCount)
+                            mapAttTypeToRetryCount[mapAttIdToType[strAttachmentId]] += 1;
+                        else
+                            mapAttTypeToRetryCount[mapAttIdToType[strAttachmentId]] = 0;
+                    }
+                    else
+                        mapAttTypeToRetryCount[mapAttIdToType[strAttachmentId]] = 0;
+                    //alert('mapAttTypeToRetryCount[mapAttIdToType[strAttachmentId]]----------->'+mapAttTypeToRetryCount[mapAttIdToType[strAttachmentId]]);
+                    if(mapAttTypeToRetryCount[mapAttIdToType[strAttachmentId]] <= 3)
+                    {
+                        console.log('Show Alert');
+                        showModal('#timeoutUploadModalAlert', true);
+                    }
+                    else
+                    {
+                        boolDoDeleteAttachment = true;
+                        $('#removeButtonSection[functionality="' + mapAttIdToType[strAttachmentId] + '"] > button').click();
+                    }
+                    //alert('boolDoDeleteAttachment-------->'+boolDoDeleteAttachment);
+                    showHideProgressBar(mapAttIdToType[strAttachmentId], false);
+                    
+                    console.log('it ran');
+                } else {
+                    boolDoDeleteAttachment = true;
+                    showHideProgressBar(mapAttIdToType[strAttachmentId], true, 100);
+                    
+                    
+                    $('#successMessageUpload[functionality="' + mapAttIdToType[strAttachmentId] + '"]').text('{!$Label.Enrollment_Portal_Document_uploaded_successfully_HF}');
+                    $('#attachmentResultMessage[functionality="' + mapAttIdToType[strAttachmentId] + '"]').show();
+                    $('.kv-file-remove', $('#removeButtonSection[functionality="' + mapAttIdToType[strAttachmentId] + '"]')).css('display', '');
+                }
+                // Removed delete attachment
+                /*if(boolDoDeleteAttachment) {
+                    deleteAttachmentSFDC(strAttachmentId);
+                }*/
+            }
+            
+            
+            /*
+             * Method name  :   browserLinkHandler
+             * Description  :   Handles the click event of Browser link.
+             * Return Type  :   -
+             * Parameter    :   DOM object
+             */
+            function browserLinkHandler(objBrowseLink) {
+                $('.btn-file > input[type=file]', $(objBrowseLink).closest('inputfile')).trigger("click");
+            }
+            
+            /*
+             * Method name: showHideProgressBar
+             * Description: Shows/hide progress bar with specific percentage.
+             * Return Type: -
+             * Parameter:   Functionality, Should show bar?, Percetange
+             */
+            function showHideProgressBar(strFunctionality, boolShouldShow, intPercentage) {
+                if(boolShouldShow) {
+                    $('.progressText[functionality="' + strFunctionality + '"], .progress[functionality="' + strFunctionality + '"]').css('display', '');
+                } else {
+                    $('.progressText[functionality="' + strFunctionality + '"], .progress[functionality="' + strFunctionality + '"]').css('display', 'none');
+                    intPercentage = 0;
+                }
+                $('.progressText[functionality="' + strFunctionality + '"]').text('File upload progress - ' + intPercentage + '%');
+                $('.progress-bar[functionality="' + strFunctionality + '"]').attr('aria-valuenow', intPercentage).css({width: intPercentage + '%'});
+            }
+            
+            /*END INPUT FILE - CUSTOM FUNCTIONS*/
+        </script>
+    </apex:actionRegion>
+     <apex:actionRegion rendered="{!boolIsIndividual}">
+        <style>
+            input[type="radio"]+span {
+                margin-left: 35px;
+            }
+            input[type="radio"] {
+                position: absolute;
+            }
+        </style>
+        </apex:actionRegion>
+    <style>
+        
+        /* Center container. */
+        .headerMargin {
+            padding-top: 155px;
+        }
+        .headerMarginLogin {
+            padding-top: 80px;
+        }
+        #mainContainer .col-md-8, .maxScreenWidth {
+            max-width: 1024px;
+        }
+        
+        /* Height for headers */
+        .verticalAligmentParentHeader {
+            height: 5vh;
+            min-height: 80px;
+        }
+        
+        /* Height for footers */
+        .verticalAligmentParentBottom {
+            min-height: 40px;
+        }
+        
+        /*show and hide*/
+        .hideSection {
+            display: none;
+        }
+        
+        .panel-heading {
+            padding: 0px 0px 0px 15px;
+            height: 50px;
+        }
+      
+        /*Dependent panels and elements styling*/
+        .dependentDetail {
+            border: 0px;
+        }
+        
+        .panelIcon30-white {
+            color: white !important;
+            font-size: 30px;
+            margin: 10px;
+        }
+        
+        .blockDependentUpDown {
+            height:50px; 
+            width: 50px;
+            vertical-align: middle;  
+            background-color: #82C341; 
+            display: inline-block;
+        }
+        
+        .blockDependentUpDown:hover {
+            background-color: #62BC10; 
+        }
+        
+        /*For Style Override Component*/
+        .verticalRadio {
+            height: 50px;
+        }
+        
+        input[type="radio"] {
+             height: 30px;
+             width: 30px;
+             margin-top: 0px;
+        }
+
+        input[type="checkbox"] {
+             height: 24px;
+             width: 24px;
+             margin-top: 0px;
+        }
+        .radio, .checkbox{margin-top:0px !important;}
+        .radio label{line-height:30px !important;}
+        
+        .redBoxAlert {
+            align: center;
+            border: 1px dashed #AD122A;
+            font-size: 12px;
+        }
+        
+        .customDivRow {
+            height: 50px;
+        }
+        
+        .centerLabelDivRow {
+            padding-top: 15px;
+        }
+        
+        .btn {
+            white-space: normal;
+        }
+        
+        /*Business Specific Validation Message*/
+        .businessValidationMessage {
+            font: 100%/1.5 "Museo Sans 700", Arial, sans-serif;
+            font-size: 15px;
+        }
+        
+        /*Rider purple messages*/
+        .dependentRiderMsg {
+            display: none;
+        }
+        .riderMsg {
+            font: 100%/1.5 "Museo Sans 700", Arial, sans-serif;
+            font-size: 15px;
+        }     
+               
+        /*INPUT FILE*/
+        /* Formatting Input File component. */
+        .file-preview-frame > *:not(.file-thumbnail-footer) {
+            display: none;
+        }
+        .file-preview-frame > .file-preview-other-footer {
+            display: inherit;
+        }
+        .file-drop-zone-title {
+            font-size: 18px;
+            padding: 10px 10px;
+            height: 70px;
+            text-align: left;
+            padding-top: 22px;
+        }
+        .file-drop-zone {
+            border: 1px dashed #fff !important;
+            border-radius: 0px !important;
+        }
+        .file-preview.hf-Background-HealthfirstGreen {
+            border-radius: 0px;
+            padding: 4px;
+            border: 1px solid #474B55 !important;
+        }
+        .fileinput-remove, .btn-file {
+            display: none;
+        }
+        #uploadMessagesAttachments {
+            background-color: white;
+            border-color: white;
+        }
+        #uploadMessagesAttachments > ul > li {
+            list-style-type: none;
+            color: #AD122A;
+            margin-left: -60px;
+        }
+        #uploadMessagesAttachments > span {
+            display: none;
+        }
+        .file-preview-other-frame {
+            display: none;
+        }
+        .file-preview-frame, .file-preview-frame:not(.file-preview-error):hover {
+            height: 100% !important;
+            border-width: 0px;
+            box-shadow: none;
+            opacity: 1;
+        }
+        .file-upload-indicator {
+            display: none;
+        }
+        .file-footer-caption {
+            text-align: left;
+            margin-left: 2px;
+            font-size: 14px;
+            width: 100%;
+        }
+        .file-footer-buttons {
+            position: absolute;
+            top: -44px;
+            left: 271px;
+        }
+        .kv-file-upload, .file-preview-text, .btn-block {
+            display: none;
+        }
+        .kv-file-remove, .kv-file-remove:hover {
+            height: 78px !important;
+            background-color: #474B55 !important;
+            background-image: none !important;
+            color: white !important;
+            text-shadow: none;
+            width: 105px;
+            font-size: 16px;
+            margin-top:18px !important;
+        }
+        .file-footer-buttons, .file-actions, .file-preview-status {
+            display: none;
+        }
+        .hf-Background-LightGreen > .file-drop-zone, 
+                .hf-Background-LightGreen > .file-drop-zone > .file-preview-thumbnails > .file-preview-frame > .file-thumbnail-footer > .file-footer-caption {
+            color: #000000;
+            border-color: #FFFFFF;
+        }
+        .successMessageUpload {
+            border-color: #82C341;
+            border-width: 2px;
+            border-style: solid;
+            margin: -3px;
+            padding: 5px;
+            font-weight: 600;
+        }
+        .file-thumb-loading, .file-uploading {
+            background: url() !important;
+        }
+        .kv-upload-progress > .progress, .file-thumbnail-footer > .progress, .file-thumb-progress > .progress {
+            display: none;
+        }
+        .progress {
+            display: inherit;
+        }
+        .greenProgressBar {
+            background-image: -webkit-linear-gradient(top, #82C341 0, #82C341 100%);
+            background-image: -o-linear-gradient(top, #82C341 0, #82C341 100%);
+            background-image: -webkit-gradient(linear, left top, left bottom, color-stop(0, #82C341), to(#82C341));
+            background-image: linear-gradient(to bottom, #82C341 0, #82C341 100%);
+            background-repeat: repeat-x;
+            filter: progid:DXImageTransform.Microsoft.gradient(startColorstr='#82C341', endColorstr='#82C341', GradientType=0);
+            background-color: #82C341;
+        }
+        .progressBarHeight {
+            height: 10px;
+        }
+       .textAlignmentRight{
+        text-align:right !important;
+       } 
+      .notes {
+        font: 100%/1.5 "Museo Sans 300", Arial, sans-serif !important;
+        font-size: 14px !important;
+       }
+       /*To remove shadow*/
+        .btn-success.hf-background-button-white, .btn-success:hover.hf-background-button-white:hover {
+            color: #529535 !important;
+            text-shadow: 0 0px 0 rgba(0,0,0,0.2) !important;
+        }
+        /*steps indicator*/
+        .hf-Background-HealthfirstGreen{
+            background-color: #1D90FB!important;
+        }
+         /* Wizard steps css */
+        .steps-container{
+            background-color: #FFFFFF;
+            height: 85px;
+        }
+        .steps-container ul{
+            width:100%;
+            padding: 20px 60px;
+        }
+        .step-bar{
+            width: 18%;
+            margin-right: 2%;
+            height: 10px;
+            background-color: #9B9B9B;
+            padding-top: 10px;
+            text-align: center;
+            color: #B3B2B1; 
+        }
+        .step-bar.active{
+            color: #646569;
+            background-color: #82BC00;
+        }
+        .text-center{
+            text-align: center;
+        }
+        .step-container-header{
+            margin-bottom: 20px;
+        } 
+        .step-container-header h4{
+            color: #0080BB!important;
+            margin-top: 4%;
+        }
+        .btn-success{
+            background-color: #0070d2 !important;
+            border: 1px solid #0070d2 !important;
+            color: #white !important;
+            background-image: -webkit-linear-gradient(top, #0070d2 0, #0070d2 100%);
+            background-image: -o-linear-gradient(top, #0070d2 0, #0070d2 100%);
+            background-image: -webkit-gradient(linear, left top, left bottom, color-stop(0, #0070d2 , to(#0070d2 )));
+            background-image: linear-gradient(to bottom, #0070d2 0, #0070d2 100%);
+            filter: progid:DXImageTransform.Microsoft.gradient(startColorstr='#0070d2', endColorstr='#0070d2', GradientType=0);
+            filter: progid:DXImageTransform.Microsoft.gradient(enabled = false);
+            background-repeat: repeat-x;
+            border-color: #0070d2!important;
+        }   
+        .btn-success:hover{
+            background-color: #005fb2 !important;
+            border: 1px solid #005fb2 !important;
+            color: #white !important;
+            background-image: -webkit-linear-gradient(top, #005fb2 0, #005fb2 100%);
+            background-image: -o-linear-gradient(top, #005fb2 0, #005fb2 100%);
+            background-image: -webkit-gradient(linear, left top, left bottom, color-stop(0, #005fb2 , to(#005fb2 )));
+            background-image: linear-gradient(to bottom, #005fb2 0, #005fb2 100%);
+            filter: progid:DXImageTransform.Microsoft.gradient(startColorstr='#16325c', endColorstr='#16325c', GradientType=0);
+            filter: progid:DXImageTransform.Microsoft.gradient(enabled = false);
+            background-repeat: repeat-x;
+            border-color: #005fb2;
+        }
+    </style>
+    <apex:actionRegion rendered="{!boolIsInternal}">
+        <style>
+        
+            /* Center container. */
+            .headerMargin {
+                padding-top: 104px;
+            }
+            .headerMarginLogin {
+                padding-top: 0px;
+            }
+            .row.selectedHeaderSection{
+                padding: 0px 45px;
+            }
+        </style>
+    </apex:actionRegion>
+    <nav class="{!IF(AND(boolIsInternal, OR(boolIsInDashboard, boolIsInConfirmationPage, boolIsInQualifyingEventPage)), '', 'navbar navbar-default navbar-fixed-top')}">
+        <apex:actionRegion id="externalHeader" rendered="{!NOT(boolIsInternal)}">
+            <div class="row hf-Background-DarkGray">
+                <div class="col-md-1" />
+                <div class="col-md-8 maxScreenWidth">
+                    <div class="row">
+                        <div class="col-md-4 verticalAligmentParent verticalAligmentParentHeader">
+                            <div class="verticalAligmentContent">
+                                <apex:image styleClass="pull-right" value="{!URLFOR($Resource.Alternative_Resources_HF, 'images/HFIC_Port_Elements-03.png')}" />
+                            </div>
+                        </div>
+                        <div class="col-md-2" />
+                        <div class="col-md-6 verticalAligmentParent verticalAligmentParentHeader" align="right">
+                            <div class="verticalAligmentContent textAlignmentRight">
+                                <apex:actionRegion rendered="{!boolIsLoggedIn}">
+                                    <label class="hf-Color-White">{!$Label.Enrollment_Portal_Greeting_Hi_HF}, {!$User.FirstName} {!$User.LastName}</label>&nbsp;&nbsp;&nbsp;
+                                    <apex:image value="{!URLFOR($Resource.Alternative_Resources_HF, 'images/HFIC_Home_Icon.png')}" style="cursor: pointer;" onclick="spinner(true); showDashboardAction();" />&nbsp;&nbsp;
+                                    <apex:image value="{!URLFOR($Resource.Alternative_Resources_HF, 'images/HFIC_Port_Elements-01.png')}" />
+                                    <apex:form >
+                                        <apex:actionFunction name="showDashboardAction" action="{!showDashboard}" />
+                                    </apex:form>
+                                </apex:actionRegion>
+                            </div>
+                        </div>
+                       
+                    </div>
+                </div>
+                <div class="col-md-1 verticalAligmentParent verticalAligmentParentHeader">
+                    <div class="verticalAligmentContent textAlignmentRight">
+                        
+                            <apex:actionRegion rendered="{!boolIsLoggedIn}">
+                                <a onclick="spinner(true);" href="{!$Site.BaseUrl}/secur/logout.jsp">{!$Label.Enrollment_Portal_Login_Logout_HF}</a>
+                            </apex:actionRegion>
+                            <apex:actionRegion rendered="{!AND(NOT(boolIsLoggedIn), NOT(boolIsInLoginScreen), NOT(boolIsInCreateAccountDelegatedUser))}">
+                                <apex:form >
+                                    <apex:commandLink action="{!showLoginSection}" value="Log in" onClick="spinner(true);" />
+                                </apex:form>
+                            </apex:actionRegion>
+                    </div>
+                </div>
+                <div class="col-md-" />
+            </div>
+        </apex:actionRegion>
+        <apex:actionRegion id="enrollmentSteps" 
+                rendered="{!OR(AND(boolIsInQuotingSteps, NOT(boolIsInQuotingExternal)), boolIsInEnrollmentSteps, boolIsInDocumentSteps, boolIsInReviewConfirmationSteps, boolIsInPaymentSteps, boolIsInRosterSteps, boolIsInManualEntrySteps)}">
+            <div class="row steps-container hf-Color-AdditionalLightGray">
+                <!-- <div class="col-md-2" /> -->
+                <div class="col-md-12">
+                    <apex:actionRegion rendered="{!boolIsIndividual}">
+                        <ul class="nav navbar-nav">
+                            <li class="{!IF(boolIsInQuotingSteps, 'hf-Background-HealthfirstGreen', '')} step-bar">
+                                <p>{!$Label.Enrollment_Portal_Step_Quoting_HF}</p>
+                            </li>
+                            <li class="{!IF(boolIsInEnrollmentSteps, 'hf-Background-HealthfirstGreen', '')} step-bar">
+                                <p>{!$Label.Enrollment_Portal_Step_Application_HF}</p>
+                            </li>
+                            <li class="{!IF(boolIsInDocumentSteps, 'hf-Background-HealthfirstGreen', '')} step-bar">
+                                <p>{!$Label.Enrollment_Portal_Step_Documents_HF}</p>
+                            </li>
+                            <apex:actionRegion rendered="{!IF(AND(boolHasReachedConfirmationPage, NOT(boolIsInReviewConfirmationSteps)), true, false)}">
+                                <li class="hf-Background-DarkBlue step-bar">
+                                    <p class="hf-Color-DarkBlue">Return to the Review page</p>
+                                </li>
+                            </apex:actionRegion>
+                            <apex:actionRegion rendered="{!IF(OR(NOT(boolHasReachedConfirmationPage), AND(boolHasReachedConfirmationPage, boolIsInReviewConfirmationSteps)), true, false)}"> 
+                                <li class="{!IF(boolIsInReviewConfirmationSteps, 'hf-Background-HealthfirstGreen', '')} step-bar">
+                                    <p>Step 4 - Confirmation</p>
+                                </li>
+                            </apex:actionRegion>   
+                            <li class="{!IF(boolIsInPaymentSteps, 'hf-Background-HealthfirstGreen', '')} step-bar">
+                                <p>Step 5 - Payment</p>
+                            </li>
+                        </ul>
+                    </apex:actionRegion>
+                    <apex:actionRegion rendered="{!boolIsSmallGroup}">
+                        <style>
+                            
+                            /* Specific width for Small Group steps. */
+                            .step-bar {
+                                width: 14% !important;
+                            }
+                        </style>
+                        <ul class="nav navbar-nav">
+                            <li class="{!IF(boolIsInQuotingSteps, 'hf-Background-HealthfirstGreen', '')} step-bar">
+                                <p>{!$Label.Enrollment_Portal_Step_Quoting_HF}</p>
+                            </li>
+                            <li class="{!IF(boolIsInEnrollmentSteps, 'hf-Background-HealthfirstGreen', '')} step-bar">
+                                <p>{!$Label.Enrollment_Portal_Step_Application_HF}</p>
+                            </li>
+                            <li class="{!IF(OR(boolIsInRosterSteps, boolIsInManualEntrySteps), 'hf-Background-HealthfirstGreen', '')} step-bar">
+                                <p>{!$Label.Enrollment_Portal_Step3_HF}</p>
+                            </li>
+                            <li class="{!IF(boolIsInDocumentSteps, 'hf-Background-HealthfirstGreen', '')} step-bar">
+                                <p>{!$Label.Enrollment_Portal_Step4_HF}</p>
+                            </li>
+                            <apex:actionRegion rendered="{!IF(AND(boolHasReachedConfirmationPage, NOT(boolIsInReviewConfirmationSteps)), true, false)}">
+                                <li class="hf-Background-DarkBlue step-bar">
+                                    <p class="hf-Color-DarkBlue">Return to the Review page</p>
+                                </li>
+                            </apex:actionRegion>
+                            <apex:actionRegion rendered="{!IF(OR(NOT(boolHasReachedConfirmationPage), AND(boolHasReachedConfirmationPage, boolIsInReviewConfirmationSteps)), true, false)}"> 
+                                <li class="{!IF(boolIsInReviewConfirmationSteps, 'hf-Background-HealthfirstGreen', '')} step-bar">
+                                    <p>Step 5 - Confirmation</p>
+                                </li>
+                            </apex:actionRegion>      
+                            <li class="{!IF(boolIsInPaymentSteps, 'hf-Background-HealthfirstGreen', '')} step-bar">
+                                <p>Step 6 - Payment</p>
+                            </li>
+                        </ul>
+                    </apex:actionRegion>
+                </div>
+               <!--  <div class="col-md-2" /> -->
+            </div>
+            <apex:actionRegion id="planDescriptionIndividual" rendered="{!AND(boolIsIndividual, NOT(boolIsInQuotingSteps))}">
+                <div class="row selectedHeaderSection" height="40px">
+                    <div class="col-md-12">
+                        <h4>
+                           <!--<span class="hf-Color-White" style="font-weight: bold;">{!$Label.Enrollment_Portal_Selected_Plan_HF}</span> 
+                            <span class="hf-Color-White">{!IF(objEnrollmentWrapper.objPlan1 != NULL, objEnrollmentWrapper.objPlan1.Name, objEnrollmentWrapper.objPlan2.Name)} - </span> 
+                            <span class="hf-Color-White" style="font-weight: bold;">
+                                ${!IF(AND(objEnrollmentWrapper.objPlan1 != NULL, objEnrollmentWrapper.objPlan1.PricebookEntries != NULL), objEnrollmentWrapper.objPlan1.PricebookEntries[0].UnitPrice, IF(AND(objEnrollmentWrapper.objPlan2 != NULL, objEnrollmentWrapper.objPlan2.PricebookEntries != NULL), objEnrollmentWrapper.objPlan2.PricebookEntries[0].UnitPrice, ''))}/month
+                            </span>-->
+                            <span class="hf-Color-White" style="font-weight: bold;">{!$Label.Enrollment_Portal_Selected_Plan_HF}</span> 
+                            <span class="hf-Color-White">{!IF(objEnrollmentWrapper.objPlan1 != NULL, objEnrollmentWrapper.objPlan1.Name, objEnrollmentWrapper.objPlan2.Name)} - </span> 
+                            <span class="hf-Color-White" style="font-weight: bold;">
+                                $<apex:outputText value="{0, number, ###,###.##}" rendered="{!AND(
+                                        objEnrollmentWrapper.objPlan1 != NULL, 
+                                        objEnrollmentWrapper.objPlan1.PricebookEntries != NULL
+                                    )}">
+                                    <apex:param value="{!objEnrollmentWrapper.objPlan1.PricebookEntries[0].UnitPrice}"/>
+                                </apex:outputText>
+                                <apex:outputText value="{0, number, ###,###.##}" rendered="{!AND(
+                                        objEnrollmentWrapper.objPlan2 != NULL, 
+                                        objEnrollmentWrapper.objPlan2.PricebookEntries != NULL
+                                    )}">
+                                    <apex:param value="{!objEnrollmentWrapper.objPlan2.PricebookEntries[0].UnitPrice}"/>
+                                </apex:outputText>/month
+                            </span>
+                        </h4>
+                    </div>
+                </div>
+            </apex:actionRegion>
+            <apex:actionRegion id="planDescriptionSmallGroup" rendered="{!AND(boolIsSmallGroup, NOT(boolIsInQuotingSteps))}">
+                <div class="row selectedHeaderSection" height="40px">
+                    <div class="col-md-12">
+                        <h4>
+                           <!--<span class="hf-Color-White" style="font-weight: bold;">Selected Plans:</span> 
+                            <apex:outputPanel rendered="{!objEnrollmentWrapper.objPlan1 != NULL}">
+                                <span class="hf-Color-White">{!objEnrollmentWrapper.objPlan1.Name}</span> 
+                            </apex:outputPanel>
+                            <apex:outputPanel rendered="{!AND(objEnrollmentWrapper.objPlan1 != NULL, objEnrollmentWrapper.objPlan2 != NULL)}">
+                                <span class="hf-Color-White"> and </span>
+                            </apex:outputPanel>
+                            <apex:outputPanel rendered="{!objEnrollmentWrapper.objPlan2 != NULL}">
+                                <span class="hf-Color-White">{!objEnrollmentWrapper.objPlan2.Name}</span>
+                            </apex:outputPanel>
+                            <span class="hf-Color-White" style="font-weight: bold;"> - ${!objEnrollmentWrapper.dblTotalPlans}0/month</span>-->
+                            <span class="hf-Color-White" style="font-weight: bold;">Selected Plans:</span> 
+                            <apex:outputPanel rendered="{!objEnrollmentWrapper.objPlan1 != NULL}">
+                                <span class="hf-Color-White">{!objEnrollmentWrapper.objPlan1.Name}</span> 
+                            </apex:outputPanel>
+                            <apex:outputPanel rendered="{!AND(objEnrollmentWrapper.objPlan1 != NULL, objEnrollmentWrapper.objPlan2 != NULL)}">
+                                <span class="hf-Color-White"> and </span>
+                            </apex:outputPanel>
+                            <apex:outputPanel rendered="{!objEnrollmentWrapper.objPlan2 != NULL}">
+                                <span class="hf-Color-White">{!objEnrollmentWrapper.objPlan2.Name}</span>
+                            </apex:outputPanel>
+                            <span class="hf-Color-White" style="font-weight: bold;"> - 
+                                $<apex:outputText value="{0, number, ###,###.##}">
+                                    <apex:param value="{!objEnrollmentWrapper.dblTotalPlans}"/>
+                                </apex:outputText>/month
+                            </span>
+                        </h4>
+                    </div>
+                </div>
+            </apex:actionRegion>
+        </apex:actionRegion>
+    </nav>
+    <!-- Main container -->
+<!--     ---App flow--- -->
+<!--     {!boolIsIndividual}---{!boolIsSmallGroup}--- -->
+<!--     {!OR(AND(OR(boolIsLoggedIn, boolIsInQuotingExternal), boolIsInQuotingSteps), AND(boolIsLoggedIn, OR(boolIsInEnrollmentSteps, boolIsInDocumentSteps, boolIsInReviewConfirmationSteps, boolIsInConfirmationPage, AND(boolIsInDashboard, boolIsIndividual, objEnrollmentWrapper.objEnrollmentRecord.Id != NULL, OR(objEnrollmentWrapper.objEnrollmentRecord.Status_HF__c == ENROLLMENT_PORTAL_ENROLLMENT_STATUS_REJECTED, objEnrollmentWrapper.objEnrollmentRecord.Status_HF__c == ENROLLMENT_PORTAL_ENROLLMENT_STATUS_SUBMITTED, objEnrollmentWrapper.objEnrollmentRecord.Status_HF__c == ENROLLMENT_PORTAL_ENROLLMENT_STATUS_FAILED_RETRY_IN_PROGRESS)))))} -->
+    <apex:outputPanel id="mainContainer">
+        <div id="mainContainer" 
+                class="container-fluid {!IF(OR(boolIsInQuotingSteps, boolIsInEnrollmentSteps, boolIsInDocumentSteps, boolIsInPaymentSteps, boolIsInRosterSteps, boolIsInManualEntrySteps, boolIsInPaymentSteps, boolIsInReviewConfirmationSteps), 'headerMargin', 'headerMarginLogin')}">
+            <apex:include id="EnrollmentAgentPortalAppFirstFlow_HF" pageName="EnrollmentAgentPortalFirstFlow_HF" 
+                    rendered="{!AND(
+                            NOT(AND(boolIsLoggedIn, boolIsInConfirmationPage)),
+                        OR(
+                        AND(OR(boolIsLoggedIn, boolIsInQuotingExternal), boolIsInQuotingSteps), 
+                        AND(boolIsLoggedIn, 
+                            OR( boolIsInEnrollmentSteps, 
+                                boolIsInDocumentSteps, 
+                                boolIsInReviewConfirmationSteps, 
+                                boolIsInConfirmationPage, 
+                                AND(    
+                                    boolIsInDashboard, 
+                                    boolIsIndividual, 
+                                    objEnrollmentWrapper.objEnrollmentRecord.Id != NULL, 
+                                    OR( objEnrollmentWrapper.objEnrollmentRecord.Status_HF__c == ENROLLMENT_PORTAL_ENROLLMENT_STATUS_REJECTED, 
+                                        objEnrollmentWrapper.objEnrollmentRecord.Status_HF__c == ENROLLMENT_PORTAL_ENROLLMENT_STATUS_SUBMITTED, 
+                                        objEnrollmentWrapper.objEnrollmentRecord.Status_HF__c == ENROLLMENT_PORTAL_ENROLLMENT_STATUS_FAILED_RETRY_IN_PROGRESS))))))}" />
+                                
+            <apex:include id="EnrollmentAgentPortalAppSecondFlow_HF" pageName="EnrollmentAgentPortalAppSecondFlow_HF" rendered="{!AND(boolIsLoggedIn, OR(boolIsInRosterSteps, boolIsInManualEntrySteps, boolIsInAddSubscriberPage, boolIsInPaymentSteps, AND(boolIsIndividual, boolIsInQualifyingEventPage)))}" />
+            <apex:include id="enrollmentConfirmationPage" pageName="EnrollmentAgentPortalConfirmationSRInd"  rendered="{!AND(boolIsLoggedIn, boolIsInConfirmationPage)}" />
+           
+        </div>
+    </apex:outputPanel>
+    
+    <apex:form id="timeoutUploadPanel">
+                <div class="modal fade" id="timeoutUploadModalAlert" tabindex="-1" role="dialog" aria-labelledby="timeoutUploadModalAlert" data-keyboard="false" data-backdrop="static">
+            <div class="modal-dialog modal-md" role="document">
+                <div class="modal-content hf-Border-DarkGreen" style="margin-top: 130px !important;">
+                    <div class="modal-body">
+                        <div class="row">
+                            <div class="col-md-12" align="center">
+                                <span class="boldFont hf-Color-Red">We're sorry. The server timed out during upload. <br /> Please try uploading the document again.</span>
+                            </div>      
+                        </div>
+                        <div class="row">
+                            <div class="col-md-12">
+                                <br />
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-12" align="center">
+                                <apex:commandButton value="Try again" onClick="retryUploadToPega(strReuploadDocId); showModal('#timeoutUploadModalAlert', false); return false;" styleClass="btn btn-success" rerender="none"/>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </apex:form>
+    
+    <!-- Footer -->
+    <apex:include id="EnrollmentPortalFooter_HF" pageName="EnrollmentPortalFooter_HF" rendered="{!NOT(boolIsInternal)}" />
+      <apex:outputPanel id="DocumentUploadId">
+        <script>
+            //alert(boolUploadSuccess);
+            
+            strReuploadDocId = "{!strAttachmentId}";
+            
+            if(boolUploadSuccess){
+                if('{!boolUploadSuccess}'=='true')
+                    showHideProgressBar(strSelectedFunctionality, true, 100);
+                else
+                    showHideProgressBar(strSelectedFunctionality, true, 0);
+                $('#attachmentResultMessage[functionality="' + strSelectedFunctionality + '"]').show();
+                $('#successMessageUpload[functionality="' + strSelectedFunctionality + '"]').text('{!$Label.Enrollment_Portal_Document_uploaded_successfully_HF}');
+                $('.kv-file-remove', $('#removeButtonSection[functionality="' + strSelectedFunctionality + '"]')).css('display', '');
+                boolUploadSuccess = false;
+            } else if('{!boolUploadSuccess}' == 'false') {
+                    //
+            }
+        </script>
+                <script>
+            //alert(boolUploadSuccess);
+            if(boolUploadSuccess)
+            {
+                //alert({!boolUploadSuccess });
+                if('{!boolUploadSuccess }' == 'true') {
+                    //alert('Upload Success');
+                    showModal('#timeoutUploadModalAlert', true);
+                }
+                
+                showHideProgressBar(strSelectedFunctionality, true, 100);
+                $('#attachmentResultMessage[functionality="' + strSelectedFunctionality + '"]').show();
+                $('#successMessageUpload[functionality="' + strSelectedFunctionality + '"]').text('{!$Label.Enrollment_Portal_Document_uploaded_successfully_HF}');
+                $('.kv-file-remove', $('#removeButtonSection[functionality="' + strSelectedFunctionality + '"]')).css('display', '');
+                boolUploadSuccess = false;
+            }
+        </script>        
+    </apex:outputPanel>
+</apex:page>

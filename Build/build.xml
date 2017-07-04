@@ -1,0 +1,20 @@
+<project name="Sample usage of Salesforce Ant tasks" default="test" basedir="." xmlns:sf="antlib:com.salesforce">
+    <property file="build.properties"/>
+    <property environment="env"/>
+
+    <taskdef resource="com/salesforce/antlib.xml" uri="antlib:com.salesforce">
+        <classpath>
+            <pathelement location="../ant-salesforce.jar" />
+        </classpath>
+    </taskdef>
+		
+	<target name="extract_Test">
+		<mkdir dir="Test_Retrieve"/>
+      <sf:retrieve username="" password="" serverurl="https://test.salesforce.com" maxPoll="${sf.maxPoll}" 
+	  retrieveTarget="Test_Retrieve" unpackaged="package.xml" pollWaitMillis="${sf.pollWaitMillis}"/>
+    </target>
+	
+	<target name="Deploy_Test">
+     <sf:deploy username="" password="" serverurl="${sf.serverurl}" maxPoll="${sf.maxPoll}" deployRoot="src" checkonly = "true"/>
+    </target>
+</project>
