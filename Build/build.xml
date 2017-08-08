@@ -15,6 +15,6 @@
     </target>
 	
 	<target name="Deploy_Test">
-     <sf:deploy username="" password="" serverurl="${sf.serverurl}" maxPoll="${sf.maxPoll}" deployRoot="src" checkonly = "true"/>
+     <sf:deploy username="shubhamk0392@gmail.com" password="$Tom121$" serverurl="https://login.salesforce.com" maxPoll="${sf.maxPoll}" deployRoot="src" checkonly = "true"/>
     </target>
 </project>
